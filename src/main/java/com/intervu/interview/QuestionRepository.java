@@ -1,0 +1,146 @@
+package com.intervu.interview;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+
+import java.io.UncheckedIOException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static com.intervu.interview.InterviewDtos.QuestionPayload;
+
+@Repository
+public class QuestionRepository {
+
+	private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
+	};
+	private static final TypeReference<Map<String, Integer>> RUBRIC_MAP = new TypeReference<>() {
+	};
+
+	private final JdbcTemplate jdbcTemplate;
+	private final ObjectMapper objectMapper;
+
+	public QuestionRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+		this.jdbcTemplate = jdbcTemplate;
+		this.objectMapper = objectMapper;
+	}
+
+	public Optional<QuestionPayload> findFirstPublishedQuestion(String mode, String seniority) {
+		String normalizedMode = normalizeMode(mode);
+		String normalizedSeniority = normalizeSeniority(seniority);
+		List<QuestionPayload> questions = jdbcTemplate.query(
+			"""
+				SELECT id, title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric, version
+				FROM questions
+				WHERE active = TRUE
+				  AND status = 'PUBLISHED'
+				  AND mode = ?
+				  AND seniority = ?
+				ORDER BY CASE difficulty
+					WHEN 'EASY' THEN 1
+					WHEN 'MEDIUM' THEN 2
+					WHEN 'HARD' THEN 3
+					ELSE 99
+				END,
+				version DESC,
+				created_at ASC
+				LIMIT 1
+				""",
+			this::mapQuestion,
+			normalizedMode,
+			normalizedSeniority
+		);
+		if (!questions.isEmpty()) {
+			return Optional.of(questions.getFirst());
+		}
+
+		questions = jdbcTemplate.query(
+			"""
+				SELECT id, title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric, version
+				FROM questions
+				WHERE active = TRUE
+				  AND status = 'PUBLISHED'
+				  AND mode = ?
+				ORDER BY CASE difficulty
+					WHEN 'EASY' THEN 1
+					WHEN 'MEDIUM' THEN 2
+					WHEN 'HARD' THEN 3
+					ELSE 99
+				END,
+				version DESC,
+				created_at ASC
+				LIMIT 1
+				""",
+			this::mapQuestion,
+			normalizedMode
+		);
+		return questions.stream().findFirst();
+	}
+
+	public Optional<QuestionPayload> findById(UUID id) {
+		List<QuestionPayload> questions = jdbcTemplate.query(
+			"""
+				SELECT id, title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric, version
+				FROM questions
+				WHERE id = ?
+				""",
+			this::mapQuestion,
+			id
+		);
+		return questions.stream().findFirst();
+	}
+
+	private QuestionPayload mapQuestion(ResultSet rs, int rowNum) throws SQLException {
+		return new QuestionPayload(
+			rs.getObject("id", UUID.class),
+			rs.getString("title"),
+			rs.getString("prompt"),
+			rs.getString("mode"),
+			rs.getString("difficulty"),
+			rs.getString("seniority"),
+			readStringList(rs.getString("tags")),
+			readStringList(rs.getString("expected_concepts")),
+			readRubric(rs.getString("rubric")),
+			rs.getInt("version")
+		);
+	}
+
+	private List<String> readStringList(String json) {
+		if (json == null || json.isBlank()) {
+			return Collections.emptyList();
+		}
+		try {
+			return objectMapper.readValue(json, STRING_LIST);
+		} catch (Exception ex) {
+			throw new UncheckedIOException(new java.io.IOException("Failed to parse string list JSON", ex));
+		}
+	}
+
+	private Map<String, Integer> readRubric(String json) {
+		if (json == null || json.isBlank()) {
+			return Collections.emptyMap();
+		}
+		try {
+			return objectMapper.readValue(json, RUBRIC_MAP);
+		} catch (Exception ex) {
+			throw new UncheckedIOException(new java.io.IOException("Failed to parse rubric JSON", ex));
+		}
+	}
+
+	private String normalizeMode(String mode) {
+		return mode.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
+	}
+
+	private String normalizeSeniority(String seniority) {
+		return seniority.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
+	}
+
+}
