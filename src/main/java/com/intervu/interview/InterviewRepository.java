@@ -81,13 +81,15 @@ public class InterviewRepository {
 
 	public void updateSessionState(UUID sessionId, String state) {
 		jdbcTemplate.update(
-			"""
-				UPDATE interview_sessions
-				SET state = ?, state_version = state_version + 1, updated_at = now()
-				WHERE id = ?
-				""",
-			state,
-			sessionId
+			"UPDATE interview_sessions SET state = ?, state_version = state_version + 1, updated_at = now() WHERE id = ?",
+			state, sessionId
+		);
+	}
+
+	public void updateSessionCurrentQuestion(UUID sessionId, UUID questionId) {
+		jdbcTemplate.update(
+			"UPDATE interview_sessions SET current_question_id = ?, state_version = state_version + 1, updated_at = now() WHERE id = ?",
+			questionId, sessionId
 		);
 	}
 
@@ -109,26 +111,38 @@ public class InterviewRepository {
 	}
 
 	public Optional<InteractionRow> findInteractionByIdempotencyKey(UUID sessionId, String idempotencyKey) {
-		List<InteractionRow> interactions = jdbcTemplate.query(
+		return jdbcTemplate.query(
 			"""
-				SELECT id, session_id, question_id, idempotency_key, payload
+				SELECT id, session_id, question_id, idempotency_key, interaction_type, payload
 				FROM interview_interactions
 				WHERE session_id = ? AND idempotency_key = ?
 				""",
 			this::mapInteraction,
 			sessionId,
 			idempotencyKey
-		);
-		return interactions.stream().findFirst();
+		).stream().findFirst();
 	}
 
-	public void insertEvaluation(UUID evaluationId, UUID sessionId, UUID interactionId, int score, Map<String, Integer> rubricScores, List<String> strengths, List<String> gaps, String followUpQuestion) {
+	public List<UUID> findAnsweredQuestionIdsBySessionId(UUID sessionId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT DISTINCT question_id
+				FROM interview_interactions
+				WHERE session_id = ? AND interaction_type = 'ANSWER' AND question_id IS NOT NULL
+				""",
+			(rs, rowNum) -> rs.getObject("question_id", UUID.class),
+			sessionId
+		);
+	}
+
+	public void insertEvaluation(UUID evaluationId, UUID sessionId, UUID interactionId, int score, Map<String, Integer> rubricScores, List<String> strengths, List<String> gaps, String followUpQuestion, String model, String provider, Long latencyMs, Double cost) {
 		jdbcTemplate.update(
 			"""
 				INSERT INTO evaluations (
-					id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question
+					id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question,
+					model, provider, latency_ms, cost
 				)
-				VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?)
+				VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
 				""",
 			evaluationId,
 			sessionId,
@@ -137,14 +151,18 @@ public class InterviewRepository {
 			writeJson(rubricScores),
 			writeJson(strengths),
 			writeJson(gaps),
-			followUpQuestion
+			followUpQuestion,
+			model,
+			provider,
+			latencyMs,
+			cost
 		);
 	}
 
 	public Optional<EvaluationRow> findEvaluationByInteractionId(UUID interactionId) {
 		List<EvaluationRow> evaluations = jdbcTemplate.query(
 			"""
-				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question
+				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question, model, provider, latency_ms, cost
 				FROM evaluations
 				WHERE interaction_id = ?
 				ORDER BY created_at DESC
@@ -159,7 +177,7 @@ public class InterviewRepository {
 	public Optional<EvaluationRow> findLatestEvaluationBySessionId(UUID sessionId) {
 		List<EvaluationRow> evaluations = jdbcTemplate.query(
 			"""
-				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question
+				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question, model, provider, latency_ms, cost
 				FROM evaluations
 				WHERE session_id = ?
 				ORDER BY created_at DESC
@@ -235,6 +253,7 @@ public class InterviewRepository {
 	}
 
 	private EvaluationRow mapEvaluation(ResultSet rs, int rowNum) throws SQLException {
+		Double cost = rs.getObject("cost") != null ? rs.getDouble("cost") : null;
 		return new EvaluationRow(
 			rs.getObject("id", UUID.class),
 			rs.getObject("session_id", UUID.class),
@@ -243,7 +262,11 @@ public class InterviewRepository {
 			readIntegerMap(rs.getString("rubric_scores")),
 			readStringList(rs.getString("strengths")),
 			readStringList(rs.getString("gaps")),
-			rs.getString("follow_up_question")
+			rs.getString("follow_up_question"),
+			rs.getString("model"),
+			rs.getString("provider"),
+			rs.getObject("latency_ms", Long.class),
+			cost
 		);
 	}
 

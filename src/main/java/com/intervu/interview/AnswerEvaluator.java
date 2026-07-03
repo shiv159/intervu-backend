@@ -36,8 +36,8 @@ public class AnswerEvaluator {
 	@Value("${openrouter.model}")
 	private String openrouterModel;
 
-	public AnswerEvaluator(ObjectMapper objectMapper) {
-		this.objectMapper = objectMapper;
+	public AnswerEvaluator() {
+		this.objectMapper = new ObjectMapper();
 		this.restClient = RestClient.create();
 	}
 
@@ -61,6 +61,7 @@ public class AnswerEvaluator {
 			)
 		);
 
+		long startTime = System.currentTimeMillis();
 		try {
 			String responseString = restClient.post()
 				.uri(openrouterUrl)
@@ -72,7 +73,8 @@ public class AnswerEvaluator {
 				.retrieve()
 				.body(String.class);
 
-			return parseLLMResponse(responseString, question);
+			long latencyMs = System.currentTimeMillis() - startTime;
+			return parseLLMResponse(responseString, question, latencyMs);
 		} catch (Exception e) {
 			log.error("Failed to evaluate using OpenRouter LLM. Falling back to deterministic evaluator.", e);
 			return evaluateFallback(question, normalizedAnswer);
@@ -110,7 +112,7 @@ public class AnswerEvaluator {
 		return sb.toString();
 	}
 
-	private EvaluationDraft parseLLMResponse(String openRouterResponse, QuestionPayload q) {
+	private EvaluationDraft parseLLMResponse(String openRouterResponse, QuestionPayload q, long latencyMs) {
 		try {
 			var root = objectMapper.readTree(openRouterResponse);
 			String content = root.path("choices").path(0).path("message").path("content").asText();
@@ -124,14 +126,14 @@ public class AnswerEvaluator {
 			}
 
 			EvaluationDraft draft = objectMapper.readValue(content, EvaluationDraft.class);
-			return validateAndSanitize(draft, q);
+			return validateAndSanitize(draft, q, latencyMs, openrouterModel, "OpenRouter");
 		} catch (Exception e) {
 			log.error("Failed to parse OpenRouter response: {}", openRouterResponse, e);
 			throw new RuntimeException("Invalid JSON from LLM", e);
 		}
 	}
 
-	private EvaluationDraft validateAndSanitize(EvaluationDraft draft, QuestionPayload q) {
+	private EvaluationDraft validateAndSanitize(EvaluationDraft draft, QuestionPayload q, long latencyMs, String model, String provider) {
 		// Ensure all rubric keys exist, fill missing with 0
 		Map<String, Integer> sanitizedRubric = new LinkedHashMap<>();
 		q.rubric().forEach((k, maxVal) -> {
@@ -144,7 +146,8 @@ public class AnswerEvaluator {
 		List<String> safeGaps = draft.gaps() != null ? draft.gaps() : List.of();
 		String safeFollowUp = draft.followUpQuestion() != null ? draft.followUpQuestion() : "What else could be improved?";
 
-		return new EvaluationDraft(safeScore, sanitizedRubric, safeStrengths, safeGaps, safeFollowUp);
+		// Note: actual cost calculation would require token counting, leaving null/0.0 for now
+		return new EvaluationDraft(safeScore, sanitizedRubric, safeStrengths, safeGaps, safeFollowUp, model, provider, latencyMs, 0.0);
 	}
 
 	// -------------------------------------------------------------------------
@@ -240,7 +243,7 @@ public class AnswerEvaluator {
 				default -> "Can you make the example more specific and measurable?";
 			};
 
-		return new EvaluationDraft(score, rubricScores, List.copyOf(strengths), List.copyOf(gaps), followUpQuestion);
+		return new EvaluationDraft(score, rubricScores, List.copyOf(strengths), List.copyOf(gaps), followUpQuestion, "deterministic-fallback", "local", 0L, 0.0);
 	}
 
 	private boolean containsAny(String text, String... needles) {

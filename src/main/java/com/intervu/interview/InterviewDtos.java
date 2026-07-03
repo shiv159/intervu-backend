@@ -92,7 +92,11 @@ public final class InterviewDtos {
 		Map<String, Integer> rubricScores,
 		List<String> strengths,
 		List<String> gaps,
-		String followUpQuestion
+		String followUpQuestion,
+		String model,
+		String provider,
+		Long latencyMs,
+		Double cost
 	) {
 	}
 
@@ -128,7 +132,11 @@ public final class InterviewDtos {
 		Map<String, Integer> rubricScores,
 		List<String> strengths,
 		List<String> gaps,
-		String followUpQuestion
+		String followUpQuestion,
+		String model,
+		String provider,
+		Long latencyMs,
+		Double cost
 	) {
 	}
 
