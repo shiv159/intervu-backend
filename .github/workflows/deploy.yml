@@ -1,0 +1,128 @@
+name: Deploy Backend to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GAR_LOCATION: ${{ secrets.GCP_REGION }}-docker.pkg.dev
+  IMAGE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/intervu/backend
+  SERVICE_NAME: intervu-backend
+
+jobs:
+  test:
+    name: Test (Maven)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Run tests
+        run: ./mvnw test -B
+        env:
+          SPRING_FLYWAY_ENABLED: false
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      service_url: ${{ steps.deploy.outputs.service_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }} --quiet
+
+      - name: Ensure Artifact Registry repository exists
+        run: |
+          gcloud artifacts repositories describe intervu \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --location=${{ secrets.GCP_REGION }} 2>/dev/null || \
+          gcloud artifacts repositories create intervu \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --location=${{ secrets.GCP_REGION }} \
+            --repository-format=docker \
+            --description="Intervu container images"
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            -t ${{ env.IMAGE }}:${{ github.sha }} \
+            -t ${{ env.IMAGE }}:latest \
+            .
+
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          CORS_ORIGINS="${{ secrets.CORS_ALLOWED_ORIGINS }}"
+          if [ -z "$CORS_ORIGINS" ]; then
+            CORS_ORIGINS="http://localhost:4200"
+          fi
+
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --region=${{ secrets.GCP_REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --memory=1Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }},POSTGRES_USER=${{ secrets.POSTGRES_USER }},POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }},OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }},OPENROUTER_MODEL=${{ secrets.OPENROUTER_MODEL || 'google/gemini-2.5-flash' }},INTERVU_JWT_SECRET=${{ secrets.JWT_SECRET }},INTERVU_CORS_ALLOWED_ORIGINS=$CORS_ORIGINS" \
+            --quiet
+
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --region=${{ secrets.GCP_REGION }} \
+            --format='value(status.url)')
+          echo "service_url=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "Backend deployed at: $SERVICE_URL"
+
+      - name: Verify deployment
+        run: |
+          SERVICE_URL="${{ steps.deploy.outputs.service_url }}"
+          echo "Checking backend health at $SERVICE_URL/api/health ..."
+
+          for i in 1 2 3 4 5; do
+            if curl -sf "$SERVICE_URL/api/health"; then
+              echo ""
+              echo "Backend is healthy!"
+              echo "Backend URL: $SERVICE_URL"
+              exit 0
+            fi
+            echo "Attempt $i/5 - waiting 10s..."
+            sleep 10
+          done
+
+          echo "Health check did not pass after 5 attempts"
+          exit 1

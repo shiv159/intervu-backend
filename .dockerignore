@@ -1,0 +1,12 @@
+# Backend
+target/
+*.jar
+*.class
+.env
+.env.*
+!.env.example
+.mvn/wrapper/maven-wrapper.jar
+node_modules/
+
+# Frontend (if accidentally placed here)
+dist/
