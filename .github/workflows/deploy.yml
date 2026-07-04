@@ -26,11 +26,8 @@ jobs:
           java-version: '25'
           cache: maven
 
-      - name: Make Maven wrapper executable
-        run: chmod +x mvnw
-
       - name: Run tests
-        run: ./mvnw test -B
+        run: mvn test -B
 
   deploy:
     name: Deploy to Cloud Run
