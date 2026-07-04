@@ -31,8 +31,6 @@ jobs:
 
       - name: Run tests
         run: ./mvnw test -B
-        env:
-          SPRING_FLYWAY_ENABLED: false
 
   deploy:
     name: Deploy to Cloud Run

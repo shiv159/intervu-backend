@@ -31,11 +31,6 @@ public class InterviewController {
 		this.interviewService = interviewService;
 	}
 
-	@GetMapping("/health")
-	public java.util.Map<String, String> health() {
-		return java.util.Map.of("status", "ok");
-	}
-
 	@PostMapping
 	public InterviewSessionResponse createInterview(
 		@RequestAttribute("userId") String userId,

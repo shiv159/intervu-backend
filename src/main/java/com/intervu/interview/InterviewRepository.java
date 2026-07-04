@@ -190,13 +190,13 @@ public class InterviewRepository {
 	}
 
 	public void insertEvent(UUID sessionId, String eventType, String payload) {
-		Integer nextVersion = jdbcTemplate.queryForObject(
+		Long nextVersion = jdbcTemplate.queryForObject(
 			"""
 				SELECT COALESCE(MAX(event_version), 0) + 1
 				FROM session_events
 				WHERE session_id = ?
 				""",
-			Integer.class,
+			Long.class,
 			sessionId
 		);
 		jdbcTemplate.update(
@@ -206,7 +206,7 @@ public class InterviewRepository {
 				""",
 			UUID.randomUUID(),
 			sessionId,
-			nextVersion == null ? 1 : nextVersion,
+			nextVersion == null ? 1L : nextVersion,
 			eventType,
 			payload
 		);

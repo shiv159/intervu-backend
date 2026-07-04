@@ -10,25 +10,33 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DatabaseMigrationTests {
 
 	@Test
-	void initialMigrationDefinesMvpSchemaAndSeeds() throws Exception {
-		var sql = Files.readString(Path.of("src/main/resources/db/migration/V1__mvp_schema.sql"));
+	void schemaAndSeedFilesDefineTheBootstrapDatabase() throws Exception {
+		var schema = Files.readString(Path.of("src/main/resources/schema.sql"));
+		var data = Files.readString(Path.of("src/main/resources/data.sql"));
 
-		for (var table : new String[] { "questions", "question_embeddings", "interview_sessions",
-				"interview_interactions", "evaluations", "evaluation_runs", "session_events",
-				"analytics_snapshots" }) {
-			assertThat(sql).contains("CREATE TABLE " + table);
+		for (var table : new String[] { "questions", "interview_sessions", "interview_interactions",
+				"evaluations", "session_events" }) {
+			assertThat(schema).contains("CREATE TABLE IF NOT EXISTS " + table);
 		}
 
-		assertThat(sql).contains("CREATE EXTENSION IF NOT EXISTS vector");
-		assertThat(sql).contains("idx_questions_status");
-		assertThat(sql).contains("idx_questions_tags");
-		assertThat(sql).contains("idx_interview_sessions_owner_id");
-		assertThat(sql).contains("idx_session_events_session_id_version");
-		assertThat(sql).contains("idx_interview_interactions_idempotency_key");
-		assertThat(sql).contains("idx_evaluations_session_id");
-		assertThat(sql).contains("'CODE'");
-		assertThat(sql).contains("'SYSTEM_DESIGN'");
-		assertThat(sql).contains("'CONVERSATIONAL'");
+		for (var table : new String[] { "question_embeddings", "evaluation_runs", "analytics_snapshots" }) {
+			assertThat(schema).doesNotContain("CREATE TABLE IF NOT EXISTS " + table);
+		}
+
+		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_questions_status");
+		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_questions_tags");
+		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_interview_sessions_owner_id");
+		assertThat(schema).contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_interview_interactions_idempotency_key");
+		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_evaluations_session_id");
+		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_session_events_session_id_version");
+
+		assertThat(data).contains("Two Sum in Java");
+		assertThat(data).contains("Design a URL Shortener");
+		assertThat(data).contains("Tell Me About a Production Incident");
+		assertThat(data).contains("ON CONFLICT (id) DO NOTHING");
+		assertThat(data).contains("'CODE'");
+		assertThat(data).contains("'SYSTEM_DESIGN'");
+		assertThat(data).contains("'CONVERSATIONAL'");
 	}
 
 }
