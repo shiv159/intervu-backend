@@ -93,7 +93,7 @@ jobs:
         run: |
           CORS_ORIGINS="${{ secrets.CORS_ALLOWED_ORIGINS }}"
           if [ -z "$CORS_ORIGINS" ]; then
-            CORS_ORIGINS="http://localhost:4200"
+            CORS_ORIGINS="http://localhost:4200,https://intervu-frontend-jnzeurk34q-uc.a.run.app"
           fi
 
           gcloud run deploy ${{ env.SERVICE_NAME }} \
