@@ -90,8 +90,19 @@ jobs:
         run: |
           CORS_ORIGINS="${{ secrets.CORS_ALLOWED_ORIGINS }}"
           if [ -z "$CORS_ORIGINS" ]; then
-            CORS_ORIGINS="http://localhost:4200,https://intervu-frontend-jnzeurk34q-uc.a.run.app"
+            echo "CORS_ALLOWED_ORIGINS secret is required."
+            exit 1
           fi
+
+          cat > /tmp/intervu-backend.env <<EOF
+          DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          POSTGRES_USER="${{ secrets.POSTGRES_USER }}"
+          POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}"
+          OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}"
+          OPENROUTER_MODEL="${{ secrets.OPENROUTER_MODEL || 'google/gemini-2.5-flash' }}"
+          INTERVU_JWT_SECRET="${{ secrets.JWT_SECRET }}"
+          INTERVU_CORS_ALLOWED_ORIGINS="${CORS_ORIGINS}"
+          EOF
 
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
@@ -104,7 +115,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }},POSTGRES_USER=${{ secrets.POSTGRES_USER }},POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }},OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }},OPENROUTER_MODEL=${{ secrets.OPENROUTER_MODEL || 'google/gemini-2.5-flash' }},INTERVU_JWT_SECRET=${{ secrets.JWT_SECRET }},INTERVU_CORS_ALLOWED_ORIGINS=$CORS_ORIGINS" \
+            --env-vars-file=/tmp/intervu-backend.env \
             --quiet
 
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
