@@ -31,17 +31,20 @@ public class InterviewService {
 	private static final String STATE_EVALUATED = "EVALUATED";
 
 	private final QuestionRepository questionRepository;
+	private final QuestionRetrievalService questionRetrievalService;
 	private final InterviewRepository interviewRepository;
 	private final AnswerEvaluator answerEvaluator;
 	private final ObjectMapper objectMapper;
 
 	public InterviewService(
 		QuestionRepository questionRepository,
+		QuestionRetrievalService questionRetrievalService,
 		InterviewRepository interviewRepository,
 		AnswerEvaluator answerEvaluator,
 		ObjectMapper objectMapper
 	) {
 		this.questionRepository = questionRepository;
+		this.questionRetrievalService = questionRetrievalService;
 		this.interviewRepository = interviewRepository;
 		this.answerEvaluator = answerEvaluator;
 		this.objectMapper = objectMapper;
@@ -49,8 +52,7 @@ public class InterviewService {
 
 	@Transactional
 	public InterviewSessionResponse createInterview(String ownerId, CreateInterviewRequest request) {
-		QuestionPayload question = questionRepository.findFirstPublishedQuestion(request.mode(), request.seniority())
-			.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No published question matched the requested mode"));
+		QuestionPayload question = questionRetrievalService.selectFirstQuestion(request.mode(), request.seniority(), request.skills(), request.focusAreas());
 
 		UUID sessionId = UUID.randomUUID();
 		SessionRow session = new SessionRow(
@@ -64,6 +66,7 @@ public class InterviewService {
 			safeList(request.skills()),
 			safeList(request.focusAreas()),
 			question.id(),
+			question.version(),
 			1L
 		);
 		interviewRepository.insertSession(session);
@@ -71,10 +74,12 @@ public class InterviewService {
 			"sessionId", sessionId,
 			"ownerId", ownerId,
 			"targetRole", session.targetRole(),
-			"questionId", question.id()
+			"questionId", question.id(),
+			"questionVersion", question.version()
 		)));
 		interviewRepository.insertEvent(sessionId, "QUESTION_STARTED", payload(Map.of(
 			"questionId", question.id(),
+			"questionVersion", question.version(),
 			"workspaceType", question.mode(),
 			"questionTitle", question.title()
 		)));
@@ -93,13 +98,14 @@ public class InterviewService {
 		}
 
 		List<UUID> answeredQuestions = interviewRepository.findAnsweredQuestionIdsBySessionId(sessionId);
-		QuestionPayload nextQ = questionRepository.findNextPublishedQuestion(session.mode(), session.seniority(), answeredQuestions).orElse(null);
+		QuestionPayload nextQ = questionRetrievalService.selectNextQuestion(session.mode(), session.seniority(), session.skills(), session.focusAreas(), answeredQuestions);
 
 		if (nextQ != null) {
-			interviewRepository.updateSessionCurrentQuestion(sessionId, nextQ.id());
+			interviewRepository.updateSessionCurrentQuestion(sessionId, nextQ.id(), nextQ.version());
 			interviewRepository.updateSessionState(sessionId, STATE_IN_PROGRESS);
 			interviewRepository.insertEvent(sessionId, "NEXT_QUESTION_READY", payload(Map.of(
 				"questionId", nextQ.id(),
+				"questionVersion", nextQ.version(),
 				"workspaceType", nextQ.mode(),
 				"questionTitle", nextQ.title()
 			)));
@@ -142,17 +148,20 @@ public class InterviewService {
 			interactionId,
 			sessionId,
 			question.id(),
+			question.version(),
 			idempotencyKey,
 			"ANSWER",
 			payload(Map.of(
 				"answer", safeAnswer(request.answer()),
 				"questionId", question.id(),
+				"questionVersion", question.version(),
 				"sessionId", sessionId
 			))
 		);
 		interviewRepository.insertEvent(sessionId, "ANSWER_SUBMITTED", payload(Map.of(
 			"interactionId", interactionId,
-			"questionId", question.id()
+			"questionId", question.id(),
+			"questionVersion", question.version()
 		)));
 
 		EvaluationRow evaluation = storeEvaluation(sessionId, interactionId, question, request.answer());
@@ -237,6 +246,7 @@ public class InterviewService {
 			session.stateVersion(),
 			session.skills(),
 			session.focusAreas(),
+			session.currentQuestionVersion(),
 			question,
 			evaluation == null ? null : toSummary(evaluation)
 		);

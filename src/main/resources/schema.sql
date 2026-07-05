@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS questions (
     id UUID PRIMARY KEY,
     title TEXT NOT NULL,
@@ -12,6 +14,14 @@ CREATE TABLE IF NOT EXISTS questions (
     active BOOLEAN NOT NULL DEFAULT TRUE,
     version INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS question_embeddings (
+    question_id UUID PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    embedding vector(1536) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    embedded_text_hash VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS interview_sessions (
@@ -33,6 +43,7 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
     skills JSONB NOT NULL DEFAULT '[]'::jsonb,
     focus_areas JSONB NOT NULL DEFAULT '[]'::jsonb,
     current_question_id UUID REFERENCES questions(id),
+    current_question_version INT,
     state_version BIGINT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -42,6 +53,7 @@ CREATE TABLE IF NOT EXISTS interview_interactions (
     id UUID PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES interview_sessions(id) ON DELETE CASCADE,
     question_id UUID REFERENCES questions(id),
+    question_version INT,
     idempotency_key TEXT NOT NULL,
     interaction_type TEXT NOT NULL,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,

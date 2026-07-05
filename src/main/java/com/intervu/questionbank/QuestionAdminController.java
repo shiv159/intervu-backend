@@ -16,15 +16,15 @@ import java.util.UUID;
 public class QuestionAdminController {
 
     private final QuestionBankImportService importService;
-    private final QuestionAdminRepository adminRepository;
+    private final QuestionPublicationService publicationService;
     private final String expectedAdminToken;
 
     public QuestionAdminController(
             QuestionBankImportService importService,
-            QuestionAdminRepository adminRepository,
+            QuestionPublicationService publicationService,
             @Value("${intervu.admin.token:secret-admin-token}") String expectedAdminToken) {
         this.importService = importService;
-        this.adminRepository = adminRepository;
+        this.publicationService = publicationService;
         this.expectedAdminToken = expectedAdminToken;
     }
 
@@ -48,11 +48,19 @@ public class QuestionAdminController {
         if (!isAuthorized(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         }
-        int updated = adminRepository.publishQuestion(id);
-        if (updated == 0) {
-            return ResponseEntity.badRequest().body("Question not found or not in DRAFT/REVIEWED status");
-        }
+        publicationService.publishQuestion(id);
         return ResponseEntity.ok("Question published successfully");
+    }
+
+    @PostMapping("/questions/{id}/embedding/rebuild")
+    public ResponseEntity<?> rebuildQuestionEmbedding(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        if (!isAuthorized(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+        }
+        publicationService.rebuildEmbedding(id);
+        return ResponseEntity.ok("Question embedding rebuilt successfully");
     }
 
     @PostMapping("/questions/{id}/archive")
@@ -62,10 +70,7 @@ public class QuestionAdminController {
         if (!isAuthorized(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         }
-        int updated = adminRepository.archiveQuestion(id);
-        if (updated == 0) {
-            return ResponseEntity.badRequest().body("Question not found");
-        }
+        publicationService.archiveQuestion(id);
         return ResponseEntity.ok("Question archived successfully");
     }
 }

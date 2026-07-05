@@ -15,14 +15,17 @@ class DatabaseMigrationTests {
 		var data = Files.readString(Path.of("src/main/resources/data.sql"));
 
 		for (var table : new String[] { "questions", "interview_sessions", "interview_interactions",
-				"evaluations", "session_events" }) {
+				"evaluations", "session_events", "question_embeddings" }) {
 			assertThat(schema).contains("CREATE TABLE IF NOT EXISTS " + table);
 		}
 
-		for (var table : new String[] { "question_embeddings", "evaluation_runs", "analytics_snapshots" }) {
+		for (var table : new String[] { "evaluation_runs", "analytics_snapshots" }) {
 			assertThat(schema).doesNotContain("CREATE TABLE IF NOT EXISTS " + table);
 		}
 
+		assertThat(schema).contains("current_question_version INT");
+		assertThat(schema).contains("question_version INT");
+		assertThat(schema).contains("CREATE EXTENSION IF NOT EXISTS vector");
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_questions_status");
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_questions_tags");
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_interview_sessions_owner_id");

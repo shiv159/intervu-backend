@@ -2,12 +2,23 @@ package com.intervu.questionbank;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public class QuestionAdminRepository {
+
+    private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Integer>> RUBRIC_MAP = new TypeReference<>() {
+    };
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -59,12 +70,47 @@ public class QuestionAdminRepository {
         }
     }
 
+    public Optional<QuestionDef> findQuestionDefById(UUID id) {
+        return jdbcTemplate.query(
+            """
+            SELECT title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric
+            FROM questions
+            WHERE id = ?
+            """,
+            this::mapQuestionDef,
+            id
+        ).stream().findFirst();
+    }
+
+    public Optional<QuestionDef> findPublishedQuestionDefById(UUID id) {
+        return jdbcTemplate.query(
+            """
+            SELECT title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric
+            FROM questions
+            WHERE id = ? AND status = 'PUBLISHED'
+            """,
+            this::mapQuestionDef,
+            id
+        ).stream().findFirst();
+    }
+
     public int publishQuestion(UUID id) {
         return jdbcTemplate.update(
             """
             UPDATE questions
-            SET status = 'PUBLISHED', active = TRUE
+            SET status = 'PUBLISHED', active = FALSE
             WHERE id = ? AND status IN ('DRAFT', 'REVIEWED')
+            """,
+            id
+        );
+    }
+
+    public int activateQuestion(UUID id) {
+        return jdbcTemplate.update(
+            """
+            UPDATE questions
+            SET active = TRUE
+            WHERE id = ? AND status = 'PUBLISHED'
             """,
             id
         );
@@ -79,5 +125,40 @@ public class QuestionAdminRepository {
             """,
             id
         );
+    }
+
+    private QuestionDef mapQuestionDef(ResultSet rs, int rowNum) throws SQLException {
+        return new QuestionDef(
+            rs.getString("title"),
+            rs.getString("prompt"),
+            rs.getString("mode"),
+            rs.getString("difficulty"),
+            rs.getString("seniority"),
+            readStringList(rs.getString("tags")),
+            readStringList(rs.getString("expected_concepts")),
+            readRubric(rs.getString("rubric"))
+        );
+    }
+
+    private List<String> readStringList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, STRING_LIST);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse question list JSON", e);
+        }
+    }
+
+    private Map<String, Integer> readRubric(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, RUBRIC_MAP);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse question rubric JSON", e);
+        }
     }
 }

@@ -177,6 +177,54 @@ public class QuestionRepository {
 		return questions.stream().findFirst();
 	}
 
+	public List<QuestionRetrievalCandidate> findRetrievalCandidates(String mode, String seniority, List<UUID> excludedIds, String queryEmbeddingLiteral) {
+		String normalizedMode = normalizeMode(mode);
+		String normalizedSeniority = normalizeSeniority(seniority);
+
+		String excludeClause = "";
+		Object[] params;
+
+		if (excludedIds != null && !excludedIds.isEmpty()) {
+			String placeholders = String.join(",", Collections.nCopies(excludedIds.size(), "?"));
+			excludeClause = " AND q.id NOT IN (" + placeholders + ") ";
+			params = new Object[3 + excludedIds.size()];
+			params[0] = queryEmbeddingLiteral;
+			params[1] = normalizedMode;
+			params[2] = normalizedSeniority;
+			for (int i = 0; i < excludedIds.size(); i++) {
+				params[3 + i] = excludedIds.get(i);
+			}
+		} else {
+			params = new Object[]{queryEmbeddingLiteral, normalizedMode, normalizedSeniority};
+		}
+
+		return jdbcTemplate.query(
+			"""
+				SELECT q.id, q.title, q.prompt, q.mode, q.difficulty, q.seniority, q.tags, q.expected_concepts, q.rubric, q.version,
+				       qe.embedded_text_hash,
+				       qe.embedding <=> ?::vector AS distance
+				FROM questions q
+				JOIN question_embeddings qe ON qe.question_id = q.id
+				WHERE q.active = TRUE
+				  AND q.status = 'PUBLISHED'
+				  AND q.mode = ?
+				  AND q.seniority = ?
+				""" + excludeClause + """
+				ORDER BY distance ASC, CASE q.difficulty
+					WHEN 'EASY' THEN 1
+					WHEN 'MEDIUM' THEN 2
+					WHEN 'HARD' THEN 3
+					ELSE 99
+				END,
+				q.version DESC,
+				q.created_at ASC
+				LIMIT 50
+				""",
+			this::mapRetrievalCandidate,
+			params
+		);
+	}
+
 	private QuestionPayload mapQuestion(ResultSet rs, int rowNum) throws SQLException {
 		return new QuestionPayload(
 			rs.getObject("id", UUID.class),
@@ -189,6 +237,14 @@ public class QuestionRepository {
 			readStringList(rs.getString("expected_concepts")),
 			readRubric(rs.getString("rubric")),
 			rs.getInt("version")
+		);
+	}
+
+	private QuestionRetrievalCandidate mapRetrievalCandidate(ResultSet rs, int rowNum) throws SQLException {
+		return new QuestionRetrievalCandidate(
+			mapQuestion(rs, rowNum),
+			rs.getDouble("distance"),
+			rs.getString("embedded_text_hash")
 		);
 	}
 
