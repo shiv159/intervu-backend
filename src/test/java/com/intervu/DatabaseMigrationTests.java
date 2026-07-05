@@ -11,8 +11,14 @@ class DatabaseMigrationTests {
 
 	@Test
 	void schemaAndSeedFilesDefineTheBootstrapDatabase() throws Exception {
+		var applicationProperties = Files.readString(Path.of("src/main/resources/application.properties"));
 		var schema = Files.readString(Path.of("src/main/resources/schema.sql"));
 		var data = Files.readString(Path.of("src/main/resources/data.sql"));
+
+		assertThat(applicationProperties.lines().filter(line -> line.startsWith("spring.sql.init.mode=")))
+			.hasSize(1);
+		assertThat(applicationProperties)
+			.contains("spring.sql.init.mode=${SPRING_SQL_INIT_MODE:always}");
 
 		for (var table : new String[] { "questions", "interview_sessions", "interview_interactions",
 				"evaluations", "session_events", "question_embeddings" }) {

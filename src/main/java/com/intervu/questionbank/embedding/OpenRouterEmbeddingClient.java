@@ -26,12 +26,14 @@ public class OpenRouterEmbeddingClient implements EmbeddingClient {
 	private final URI endpoint;
 	private final String apiKey;
 	private final String model;
+	private final int maxTokens;
 
 	public OpenRouterEmbeddingClient(
 		ObjectMapper objectMapper,
 		@Value("${openrouter.embedding.url}") String endpoint,
 		@Value("${openrouter.api.key}") String apiKey,
-		@Value("${openrouter.embedding.model}") String model
+		@Value("${openrouter.embedding.model}") String model,
+		@Value("${openrouter.embedding.max-tokens:512}") int maxTokens
 	) {
 		this.httpClient = HttpClient.newBuilder()
 			.connectTimeout(Duration.ofSeconds(10))
@@ -40,6 +42,7 @@ public class OpenRouterEmbeddingClient implements EmbeddingClient {
 		this.endpoint = URI.create(endpoint);
 		this.apiKey = apiKey;
 		this.model = model;
+		this.maxTokens = Math.max(1, maxTokens);
 	}
 
 	@Override
@@ -49,8 +52,9 @@ public class OpenRouterEmbeddingClient implements EmbeddingClient {
 		}
 
 		try {
+			String boundedInput = limitTokens(input);
 			String body = objectMapper.writeValueAsString(Map.of(
-				"input", input,
+				"input", boundedInput,
 				"model", model,
 				"dimensions", DEFAULT_DIMENSIONS,
 				"encoding_format", "float"
@@ -63,7 +67,7 @@ public class OpenRouterEmbeddingClient implements EmbeddingClient {
 				.build();
 			HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new IllegalStateException("OpenRouter embeddings request failed with status " + response.statusCode() + ": " + response.body());
+				throw new IllegalStateException(describeFailure(response.statusCode(), response.body()));
 			}
 			OpenRouterEmbeddingsResponse parsed = objectMapper.readValue(response.body(), OpenRouterEmbeddingsResponse.class);
 			if (parsed.data() == null || parsed.data().isEmpty()) {
@@ -76,6 +80,39 @@ public class OpenRouterEmbeddingClient implements EmbeddingClient {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("OpenRouter embeddings request interrupted", ex);
 		}
+	}
+
+	private String limitTokens(String input) {
+		if (input == null || input.isBlank()) {
+			return "";
+		}
+		String[] tokens = input.trim().split("\\s+");
+		if (tokens.length <= maxTokens) {
+			return input;
+		}
+		StringBuilder builder = new StringBuilder();
+		for (int i = 0; i < maxTokens; i++) {
+			if (i > 0) {
+				builder.append(' ');
+			}
+			builder.append(tokens[i]);
+		}
+		return builder.toString();
+	}
+
+	private String shorten(String body) {
+		if (body == null || body.length() <= 512) {
+			return body;
+		}
+		return body.substring(0, 512) + "...";
+	}
+
+	private String describeFailure(int statusCode, String body) {
+		String suffix = shorten(body);
+		if (statusCode == 402) {
+			return "OpenRouter embeddings quota exhausted (402 Payment Required): " + suffix;
+		}
+		return "OpenRouter embeddings request failed with status " + statusCode + ": " + suffix;
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
