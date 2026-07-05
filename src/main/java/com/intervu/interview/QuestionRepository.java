@@ -85,6 +85,85 @@ public class QuestionRepository {
 		return questions.stream().findFirst();
 	}
 
+	public Optional<QuestionPayload> findNextPublishedQuestion(String mode, String seniority, List<UUID> excludedIds) {
+		String normalizedMode = normalizeMode(mode);
+		String normalizedSeniority = normalizeSeniority(seniority);
+		
+		String excludeClause = "";
+		Object[] params1;
+		Object[] params2;
+		
+		if (excludedIds != null && !excludedIds.isEmpty()) {
+			String placeholders = String.join(",", Collections.nCopies(excludedIds.size(), "?"));
+			excludeClause = " AND id NOT IN (" + placeholders + ") ";
+			
+			params1 = new Object[2 + excludedIds.size()];
+			params1[0] = normalizedMode;
+			params1[1] = normalizedSeniority;
+			for (int i = 0; i < excludedIds.size(); i++) {
+				params1[2 + i] = excludedIds.get(i);
+			}
+			
+			params2 = new Object[1 + excludedIds.size()];
+			params2[0] = normalizedMode;
+			for (int i = 0; i < excludedIds.size(); i++) {
+				params2[1 + i] = excludedIds.get(i);
+			}
+		} else {
+			params1 = new Object[]{normalizedMode, normalizedSeniority};
+			params2 = new Object[]{normalizedMode};
+		}
+
+		List<QuestionPayload> questions = jdbcTemplate.query(
+			"""
+				SELECT id, title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric, version
+				FROM questions
+				WHERE active = TRUE
+				  AND status = 'PUBLISHED'
+				  AND mode = ?
+				  AND seniority = ?
+				""" + excludeClause + """
+				ORDER BY CASE difficulty
+					WHEN 'EASY' THEN 1
+					WHEN 'MEDIUM' THEN 2
+					WHEN 'HARD' THEN 3
+					ELSE 99
+				END,
+				version DESC,
+				created_at ASC
+				LIMIT 1
+				""",
+			this::mapQuestion,
+			params1
+		);
+		if (!questions.isEmpty()) {
+			return Optional.of(questions.getFirst());
+		}
+
+		questions = jdbcTemplate.query(
+			"""
+				SELECT id, title, prompt, mode, difficulty, seniority, tags, expected_concepts, rubric, version
+				FROM questions
+				WHERE active = TRUE
+				  AND status = 'PUBLISHED'
+				  AND mode = ?
+				""" + excludeClause + """
+				ORDER BY CASE difficulty
+					WHEN 'EASY' THEN 1
+					WHEN 'MEDIUM' THEN 2
+					WHEN 'HARD' THEN 3
+					ELSE 99
+				END,
+				version DESC,
+				created_at ASC
+				LIMIT 1
+				""",
+			this::mapQuestion,
+			params2
+		);
+		return questions.stream().findFirst();
+	}
+
 	public Optional<QuestionPayload> findById(UUID id) {
 		List<QuestionPayload> questions = jdbcTemplate.query(
 			"""

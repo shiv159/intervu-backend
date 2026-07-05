@@ -12,7 +12,7 @@ import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "spring.flyway.enabled=false")
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "spring.sql.init.mode=never")
 class IntervuApplicationTests {
 
 	@LocalServerPort

@@ -86,6 +86,33 @@ public class InterviewService {
 	}
 
 	@Transactional
+	public InterviewSessionResponse nextQuestion(UUID sessionId, String ownerId) {
+		SessionRow session = requireOwnedSession(sessionId, ownerId);
+		if (!STATE_EVALUATED.equals(session.state())) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot move to next question unless current answer is evaluated");
+		}
+
+		List<UUID> answeredQuestions = interviewRepository.findAnsweredQuestionIdsBySessionId(sessionId);
+		QuestionPayload nextQ = questionRepository.findNextPublishedQuestion(session.mode(), session.seniority(), answeredQuestions).orElse(null);
+
+		if (nextQ != null) {
+			interviewRepository.updateSessionCurrentQuestion(sessionId, nextQ.id());
+			interviewRepository.updateSessionState(sessionId, STATE_IN_PROGRESS);
+			interviewRepository.insertEvent(sessionId, "NEXT_QUESTION_READY", payload(Map.of(
+				"questionId", nextQ.id(),
+				"workspaceType", nextQ.mode(),
+				"questionTitle", nextQ.title()
+			)));
+		} else {
+			interviewRepository.updateSessionState(sessionId, "COMPLETED");
+			interviewRepository.insertEvent(sessionId, "INTERVIEW_COMPLETED", payload(Map.of(
+				"sessionId", sessionId
+			)));
+		}
+		return loadSessionView(sessionId, ownerId);
+	}
+
+	@Transactional
 	public AnswerSubmissionResponse submitAnswer(UUID sessionId, String ownerId, String idempotencyKey, AnswerSubmissionRequest request) {
 		if (idempotencyKey == null || idempotencyKey.isBlank()) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Idempotency-Key header is required");
@@ -164,22 +191,26 @@ public class InterviewService {
 	}
 
 	private EvaluationRow storeEvaluation(UUID sessionId, UUID interactionId, QuestionPayload question, String answer) {
-		EvaluationDraft draft = answerEvaluator.evaluate(question, answer);
+		EvaluationDraft eval = answerEvaluator.evaluate(question, answer);
 		UUID evaluationId = UUID.randomUUID();
 		interviewRepository.insertEvaluation(
 			evaluationId,
 			sessionId,
 			interactionId,
-			draft.score(),
-			draft.rubricScores(),
-			draft.strengths(),
-			draft.gaps(),
-			draft.followUpQuestion()
+			eval.score(),
+			eval.rubricScores(),
+			eval.strengths(),
+			eval.gaps(),
+			eval.followUpQuestion(),
+			eval.model(),
+			eval.provider(),
+			eval.latencyMs(),
+			eval.cost()
 		);
 		interviewRepository.insertEvent(sessionId, "LIVE_SCORE_UPDATED", payload(Map.of(
 			"interactionId", interactionId,
 			"evaluationId", evaluationId,
-			"score", draft.score()
+			"score", eval.score()
 		)));
 		return interviewRepository.findEvaluationByInteractionId(interactionId)
 			.orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Evaluation write did not persist"));
@@ -187,8 +218,14 @@ public class InterviewService {
 
 	private InterviewSessionResponse loadSessionView(UUID sessionId, String ownerId) {
 		SessionRow session = requireOwnedSession(sessionId, ownerId);
-		QuestionPayload question = loadCurrentQuestion(session);
-		EvaluationRow evaluation = interviewRepository.findLatestEvaluationBySessionId(session.id()).orElse(null);
+		QuestionPayload question = null;
+		if (session.currentQuestionId() != null) {
+			question = loadCurrentQuestion(session);
+		}
+		EvaluationRow evaluation = null;
+		if (STATE_EVALUATED.equals(session.state())) {
+			evaluation = interviewRepository.findLatestEvaluationBySessionId(session.id()).orElse(null);
+		}
 		return new InterviewSessionResponse(
 			session.id(),
 			session.ownerId(),

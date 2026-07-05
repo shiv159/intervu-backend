@@ -1,11 +1,11 @@
 package com.intervu.interview;
 
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,7 +23,6 @@ import static com.intervu.interview.InterviewDtos.SessionEventResponse;
 
 @RestController
 @RequestMapping("/api/interviews")
-@CrossOrigin(origins = "http://localhost:4200")
 public class InterviewController {
 
 	private final InterviewService interviewService;
@@ -34,7 +33,7 @@ public class InterviewController {
 
 	@PostMapping
 	public InterviewSessionResponse createInterview(
-		@RequestHeader(name = "X-User-Id", defaultValue = "demo-user") String userId,
+		@RequestAttribute("userId") String userId,
 		@Valid @RequestBody CreateInterviewRequest request
 	) {
 		return interviewService.createInterview(userId, request);
@@ -42,7 +41,7 @@ public class InterviewController {
 
 	@GetMapping("/{sessionId}")
 	public InterviewSessionResponse getInterview(
-		@RequestHeader(name = "X-User-Id", defaultValue = "demo-user") String userId,
+		@RequestAttribute("userId") String userId,
 		@PathVariable UUID sessionId
 	) {
 		return interviewService.getInterview(sessionId, userId);
@@ -50,7 +49,7 @@ public class InterviewController {
 
 	@PostMapping("/{sessionId}/interactions")
 	public AnswerSubmissionResponse submitAnswer(
-		@RequestHeader(name = "X-User-Id", defaultValue = "demo-user") String userId,
+		@RequestAttribute("userId") String userId,
 		@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
 		@PathVariable UUID sessionId,
 		@Valid @RequestBody AnswerSubmissionRequest request
@@ -58,9 +57,17 @@ public class InterviewController {
 		return interviewService.submitAnswer(sessionId, userId, idempotencyKey, request);
 	}
 
+	@PostMapping("/{sessionId}/next")
+	public InterviewSessionResponse nextQuestion(
+		@RequestAttribute("userId") String userId,
+		@PathVariable UUID sessionId
+	) {
+		return interviewService.nextQuestion(sessionId, userId);
+	}
+
 	@GetMapping("/{sessionId}/feedback")
 	public FeedbackResponse getFeedback(
-		@RequestHeader(name = "X-User-Id", defaultValue = "demo-user") String userId,
+		@RequestAttribute("userId") String userId,
 		@PathVariable UUID sessionId
 	) {
 		return interviewService.getFeedback(sessionId, userId);
@@ -68,7 +75,7 @@ public class InterviewController {
 
 	@GetMapping("/{sessionId}/events")
 	public List<SessionEventResponse> getEvents(
-		@RequestHeader(name = "X-User-Id", defaultValue = "demo-user") String userId,
+		@RequestAttribute("userId") String userId,
 		@PathVariable UUID sessionId,
 		@RequestParam(name = "after", defaultValue = "0") long afterVersion
 	) {
