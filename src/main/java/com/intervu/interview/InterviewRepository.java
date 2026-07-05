@@ -42,9 +42,9 @@ public class InterviewRepository {
 			"""
 				INSERT INTO interview_sessions (
 					id, owner_id, target_role, state, mode, seniority, difficulty,
-					skills, focus_areas, current_question_id, state_version
+					skills, focus_areas, current_question_id, current_question_version, state_version
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
 				""",
 			session.id(),
 			session.ownerId(),
@@ -56,6 +56,7 @@ public class InterviewRepository {
 			writeJson(session.skills()),
 			writeJson(session.focusAreas()),
 			session.currentQuestionId(),
+			session.currentQuestionVersion(),
 			session.stateVersion()
 		);
 	}
@@ -64,7 +65,7 @@ public class InterviewRepository {
 		List<SessionRow> sessions = jdbcTemplate.query(
 			"""
 				SELECT id, owner_id, target_role, state, mode, seniority, difficulty,
-				       skills, focus_areas, current_question_id, state_version
+				       skills, focus_areas, current_question_id, current_question_version, state_version
 				FROM interview_sessions
 				WHERE id = ?
 				""",
@@ -86,24 +87,32 @@ public class InterviewRepository {
 		);
 	}
 
-	public void updateSessionCurrentQuestion(UUID sessionId, UUID questionId) {
+	public void updateSessionCurrentQuestion(UUID sessionId, UUID questionId, Integer questionVersion) {
 		jdbcTemplate.update(
-			"UPDATE interview_sessions SET current_question_id = ?, state_version = state_version + 1, updated_at = now() WHERE id = ?",
-			questionId, sessionId
+			"""
+				UPDATE interview_sessions
+				SET current_question_id = ?,
+				    current_question_version = ?,
+				    state_version = state_version + 1,
+				    updated_at = now()
+				WHERE id = ?
+				""",
+			questionId, questionVersion, sessionId
 		);
 	}
 
-	public void insertInteraction(UUID interactionId, UUID sessionId, UUID questionId, String idempotencyKey, String interactionType, String payload) {
+	public void insertInteraction(UUID interactionId, UUID sessionId, UUID questionId, Integer questionVersion, String idempotencyKey, String interactionType, String payload) {
 		jdbcTemplate.update(
 			"""
 				INSERT INTO interview_interactions (
-					id, session_id, question_id, idempotency_key, interaction_type, payload
+					id, session_id, question_id, question_version, idempotency_key, interaction_type, payload
 				)
-				VALUES (?, ?, ?, ?, ?, ?::jsonb)
+				VALUES (?, ?, ?, ?, ?, ?, ?::jsonb)
 				""",
 			interactionId,
 			sessionId,
 			questionId,
+			questionVersion,
 			idempotencyKey,
 			interactionType,
 			payload
@@ -113,7 +122,7 @@ public class InterviewRepository {
 	public Optional<InteractionRow> findInteractionByIdempotencyKey(UUID sessionId, String idempotencyKey) {
 		return jdbcTemplate.query(
 			"""
-				SELECT id, session_id, question_id, idempotency_key, interaction_type, payload
+				SELECT id, session_id, question_id, question_version, idempotency_key, interaction_type, payload
 				FROM interview_interactions
 				WHERE session_id = ? AND idempotency_key = ?
 				""",
@@ -238,6 +247,7 @@ public class InterviewRepository {
 			readStringList(rs.getString("skills")),
 			readStringList(rs.getString("focus_areas")),
 			rs.getObject("current_question_id", UUID.class),
+			rs.getObject("current_question_version", Integer.class),
 			rs.getLong("state_version")
 		);
 	}
@@ -247,6 +257,7 @@ public class InterviewRepository {
 			rs.getObject("id", UUID.class),
 			rs.getObject("session_id", UUID.class),
 			rs.getObject("question_id", UUID.class),
+			rs.getObject("question_version", Integer.class),
 			rs.getString("idempotency_key"),
 			rs.getString("payload")
 		);

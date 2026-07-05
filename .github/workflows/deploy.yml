@@ -2,7 +2,9 @@ name: Deploy Backend to Cloud Run
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feature/*
   pull_request:
     branches: [main]
 
@@ -32,7 +34,7 @@ jobs:
   deploy:
     name: Deploy to Cloud Run
     needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
     permissions:

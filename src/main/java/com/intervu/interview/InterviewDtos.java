@@ -58,6 +58,7 @@ public final class InterviewDtos {
 		long stateVersion,
 		List<String> skills,
 		List<String> focusAreas,
+		Integer currentQuestionVersion,
 		QuestionPayload currentQuestion,
 		EvaluationSummary lastEvaluation
 	) {
@@ -111,6 +112,7 @@ public final class InterviewDtos {
 		List<String> skills,
 		List<String> focusAreas,
 		UUID currentQuestionId,
+		Integer currentQuestionVersion,
 		long stateVersion
 	) {
 	}
@@ -119,6 +121,7 @@ public final class InterviewDtos {
 		UUID id,
 		UUID sessionId,
 		UUID questionId,
+		Integer questionVersion,
 		String idempotencyKey,
 		String payload
 	) {
