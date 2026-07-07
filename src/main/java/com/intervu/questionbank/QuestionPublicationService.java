@@ -30,7 +30,11 @@ public class QuestionPublicationService {
 		QuestionDef question = questionAdminRepository.findPublishedQuestionDefById(questionId)
 			.orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Published question disappeared before embedding build"));
 
-		questionEmbeddingService.buildAndStoreEmbedding(questionId, question);
+		try {
+			questionEmbeddingService.buildAndStoreEmbedding(questionId, question);
+		} catch (RuntimeException ex) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Question embedding build unavailable", ex);
+		}
 
 		if (questionAdminRepository.activateQuestion(questionId) == 0) {
 			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Question embedding persisted but activation failed");
@@ -41,7 +45,15 @@ public class QuestionPublicationService {
 		QuestionDef question = questionAdminRepository.findPublishedQuestionDefById(questionId)
 			.orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question must be published before embedding rebuild"));
 
-		questionEmbeddingService.buildAndStoreEmbedding(questionId, question);
+		if (questionAdminRepository.deactivateQuestion(questionId) == 0) {
+			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Question could not be paused before embedding rebuild");
+		}
+
+		try {
+			questionEmbeddingService.buildAndStoreEmbedding(questionId, question);
+		} catch (RuntimeException ex) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Question embedding rebuild unavailable", ex);
+		}
 
 		if (questionAdminRepository.activateQuestion(questionId) == 0) {
 			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Question embedding persisted but activation failed");

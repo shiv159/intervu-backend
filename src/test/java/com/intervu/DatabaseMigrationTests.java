@@ -11,8 +11,14 @@ class DatabaseMigrationTests {
 
 	@Test
 	void schemaAndSeedFilesDefineTheBootstrapDatabase() throws Exception {
+		var applicationProperties = Files.readString(Path.of("src/main/resources/application.properties"));
 		var schema = Files.readString(Path.of("src/main/resources/schema.sql"));
 		var data = Files.readString(Path.of("src/main/resources/data.sql"));
+
+		assertThat(applicationProperties.lines().filter(line -> line.startsWith("spring.sql.init.mode=")))
+			.hasSize(1);
+		assertThat(applicationProperties)
+			.contains("spring.sql.init.mode=${SPRING_SQL_INIT_MODE:always}");
 
 		for (var table : new String[] { "questions", "interview_sessions", "interview_interactions",
 				"evaluations", "session_events", "question_embeddings" }) {
@@ -32,6 +38,11 @@ class DatabaseMigrationTests {
 		assertThat(schema).contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_interview_interactions_idempotency_key");
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_evaluations_session_id");
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_session_events_session_id_version");
+
+		assertThat(schema).contains("ALTER TABLE interview_sessions");
+		assertThat(schema).contains("ADD COLUMN IF NOT EXISTS current_question_version INT");
+		assertThat(schema).contains("ALTER TABLE interview_interactions");
+		assertThat(schema).contains("ADD COLUMN IF NOT EXISTS question_version INT");
 
 		assertThat(data).contains("Two Sum in Java");
 		assertThat(data).contains("Design a URL Shortener");

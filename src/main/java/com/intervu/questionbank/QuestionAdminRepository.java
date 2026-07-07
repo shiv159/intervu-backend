@@ -116,6 +116,17 @@ public class QuestionAdminRepository {
         );
     }
 
+    public int deactivateQuestion(UUID id) {
+        return jdbcTemplate.update(
+            """
+            UPDATE questions
+            SET active = FALSE
+            WHERE id = ? AND status = 'PUBLISHED'
+            """,
+            id
+        );
+    }
+
     public int archiveQuestion(UUID id) {
         return jdbcTemplate.update(
             """

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -60,8 +61,8 @@ class QuestionPublicationServiceTests {
 		QuestionPublicationService service = new QuestionPublicationService(questionAdminRepository, questionEmbeddingService);
 
 		assertThatThrownBy(() -> service.publishQuestion(questionId))
-			.isInstanceOf(IllegalStateException.class)
-			.hasMessageContaining("embedding failed");
+			.isInstanceOf(ResponseStatusException.class)
+			.hasMessageContaining("Question embedding build unavailable");
 
 		verify(questionAdminRepository).publishQuestion(questionId);
 		verify(questionAdminRepository).findPublishedQuestionDefById(questionId);
@@ -74,6 +75,7 @@ class QuestionPublicationServiceTests {
 		UUID questionId = UUID.randomUUID();
 		QuestionDef question = questionDef();
 		when(questionAdminRepository.findPublishedQuestionDefById(questionId)).thenReturn(Optional.of(question));
+		when(questionAdminRepository.deactivateQuestion(questionId)).thenReturn(1);
 		when(questionAdminRepository.activateQuestion(questionId)).thenReturn(1);
 
 		QuestionPublicationService service = new QuestionPublicationService(questionAdminRepository, questionEmbeddingService);
@@ -81,8 +83,30 @@ class QuestionPublicationServiceTests {
 		service.rebuildEmbedding(questionId);
 
 		verify(questionAdminRepository).findPublishedQuestionDefById(questionId);
+		verify(questionAdminRepository).deactivateQuestion(questionId);
 		verify(questionEmbeddingService).buildAndStoreEmbedding(questionId, question);
 		verify(questionAdminRepository).activateQuestion(questionId);
+	}
+
+	@Test
+	void rebuildEmbeddingReturnsControlledFailureWhenEmbeddingBuildFails() {
+		UUID questionId = UUID.randomUUID();
+		QuestionDef question = questionDef();
+		when(questionAdminRepository.findPublishedQuestionDefById(questionId)).thenReturn(Optional.of(question));
+		when(questionAdminRepository.deactivateQuestion(questionId)).thenReturn(1);
+		doThrow(new IllegalStateException("quota exhausted"))
+			.when(questionEmbeddingService)
+			.buildAndStoreEmbedding(questionId, question);
+
+		QuestionPublicationService service = new QuestionPublicationService(questionAdminRepository, questionEmbeddingService);
+
+		assertThatThrownBy(() -> service.rebuildEmbedding(questionId))
+			.isInstanceOf(ResponseStatusException.class)
+			.hasMessageContaining("Question embedding rebuild unavailable");
+
+		verify(questionAdminRepository).deactivateQuestion(questionId);
+		verify(questionEmbeddingService).buildAndStoreEmbedding(questionId, question);
+		verify(questionAdminRepository, org.mockito.Mockito.never()).activateQuestion(questionId);
 	}
 
 	@Test

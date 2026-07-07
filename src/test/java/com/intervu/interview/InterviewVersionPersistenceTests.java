@@ -44,6 +44,45 @@ class InterviewVersionPersistenceTests {
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Test
+	void getInterviewReturnsCurrentQuestionVersion() {
+		UUID sessionId = UUID.randomUUID();
+		UUID questionId = UUID.randomUUID();
+		QuestionPayload question = questionPayload(questionId, 5);
+		SessionRow session = new SessionRow(
+			sessionId,
+			"owner-1",
+			"Platform Engineer",
+			"IN_PROGRESS",
+			"SYSTEM_DESIGN",
+			"SENIOR",
+			"MEDIUM",
+			List.of("java"),
+			List.of("caching"),
+			questionId,
+			5,
+			3L
+		);
+
+		when(interviewRepository.loadSession(sessionId)).thenReturn(session);
+		when(questionRepository.findById(questionId)).thenReturn(Optional.of(question));
+
+		InterviewService service = new InterviewService(
+			questionRepository,
+			questionRetrievalService,
+			interviewRepository,
+			answerEvaluator,
+			objectMapper
+		);
+
+		var response = service.getInterview(sessionId, "owner-1");
+
+		assertThat(response.sessionId()).isEqualTo(sessionId);
+		assertThat(response.currentQuestionVersion()).isEqualTo(5);
+		assertThat(response.currentQuestion()).isNotNull();
+		assertThat(response.currentQuestion().id()).isEqualTo(questionId);
+	}
+
+	@Test
 	void createInterviewPersistsCurrentQuestionVersionOnSessionRow() {
 		UUID questionId = UUID.randomUUID();
 		QuestionPayload question = questionPayload(questionId, 7);
