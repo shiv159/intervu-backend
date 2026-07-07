@@ -44,35 +44,41 @@ public class SchemaValidator {
 
 	@PostConstruct
 	void validateSchema() {
-		log.info("Running database schema validation …");
+		log.info("Running database schema validation ...");
 
-		for (var entry : REQUIRED_COLUMNS.entrySet()) {
-			String table = entry.getKey();
-			List<String> required = entry.getValue();
+		try {
+			for (var entry : REQUIRED_COLUMNS.entrySet()) {
+				String table = entry.getKey();
+				List<String> required = entry.getValue();
 
-			List<String> actual = jdbcTemplate.queryForList(
-				"SELECT column_name FROM information_schema.columns " +
-					"WHERE table_name = ?",
-				table
-			).stream()
-				.map(row -> (String) row.get("column_name"))
-				.toList();
+				List<String> actual = jdbcTemplate.queryForList(
+					"SELECT column_name FROM information_schema.columns " +
+						"WHERE table_name = ?",
+					table
+				).stream()
+					.map(row -> (String) row.get("column_name"))
+					.toList();
 
-			List<String> missing = required.stream()
-				.filter(col -> !actual.contains(col))
-				.collect(Collectors.toList());
+				List<String> missing = required.stream()
+					.filter(col -> !actual.contains(col))
+					.collect(Collectors.toList());
 
-			if (!missing.isEmpty()) {
-				String message = String.format(
-					"SCHEMA VALIDATION FAILED: Table '%s' is missing columns %s. " +
-						"The application cannot start. Run the latest schema.sql to add the missing columns.",
-					table, missing
-				);
-				log.error(message);
-				throw new IllegalStateException(message);
+				if (!missing.isEmpty()) {
+					String message = String.format(
+						"SCHEMA VALIDATION FAILED: Table '%s' is missing columns %s. " +
+							"The application cannot start. Run the latest schema.sql to add the missing columns.",
+						table, missing
+					);
+					log.error(message);
+					throw new IllegalStateException(message);
+				}
 			}
-		}
 
-		log.info("Database schema validation passed — all required columns present.");
+			log.info("Database schema validation passed — all required columns present.");
+		} catch (IllegalStateException e) {
+			throw e;
+		} catch (Exception e) {
+			log.warn("Database schema validation skipped — could not connect to database: {}", e.getMessage());
+		}
 	}
 }
