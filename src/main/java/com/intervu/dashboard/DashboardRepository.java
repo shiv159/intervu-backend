@@ -8,6 +8,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.UncheckedIOException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -129,7 +130,7 @@ public class DashboardRepository {
 	public Optional<Instant> findSessionCreatedAt(UUID sessionId) {
 		return jdbcTemplate.query(
 			"SELECT created_at FROM interview_sessions WHERE id = ?",
-			(rs, rowNum) -> rs.getObject("created_at", Instant.class),
+			(rs, rowNum) -> toInstant(rs.getTimestamp("created_at")),
 			sessionId
 		).stream().findFirst();
 	}
@@ -141,29 +142,25 @@ public class DashboardRepository {
 				WHERE session_id = ? AND event_type = 'SESSION_COMPLETED'
 				ORDER BY created_at DESC LIMIT 1
 				""",
-			(rs, rowNum) -> rs.getObject("created_at", Instant.class),
+			(rs, rowNum) -> toInstant(rs.getTimestamp("created_at")),
 			sessionId
 		);
 		return results.stream().findFirst();
 	}
 
 	private DashboardSessionSummary mapDashboardSummary(ResultSet rs, int rowNum) throws SQLException {
-		Instant completedAt = null;
-		try {
-			completedAt = rs.getObject("updated_at", Instant.class);
-		} catch (Exception ignored) {
-		}
+		Integer overallScore = rs.getObject("overall_score") != null ? rs.getInt("overall_score") : null;
 		return new DashboardSessionSummary(
 			rs.getObject("id", UUID.class),
 			rs.getString("target_role"),
 			rs.getString("mode"),
 			rs.getString("seniority"),
 			rs.getString("state"),
-			rs.getObject("overall_score") != null ? rs.getInt("overall_score") : null,
-			deriveSummaryText(rs.getString("state"), rs.getObject("overall_score") != null ? rs.getInt("overall_score") : null),
+			overallScore,
+			deriveSummaryText(rs.getString("state"), overallScore),
 			rs.getLong("state_version"),
-			rs.getObject("created_at", Instant.class),
-			completedAt
+			toInstant(rs.getTimestamp("created_at")),
+			toInstant(rs.getTimestamp("updated_at"))
 		);
 	}
 
@@ -198,6 +195,10 @@ public class DashboardRepository {
 		if (score >= 60) return "Solid";
 		if (score >= 40) return "Mixed";
 		return "Needs Work";
+	}
+
+	private static Instant toInstant(Timestamp ts) {
+		return ts != null ? ts.toInstant() : null;
 	}
 
 	private List<String> readStringList(String json) {
