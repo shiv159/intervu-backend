@@ -25,9 +25,10 @@ class DatabaseMigrationTests {
 			assertThat(schema).contains("CREATE TABLE IF NOT EXISTS " + table);
 		}
 
-		for (var table : new String[] { "evaluation_runs", "analytics_snapshots" }) {
-			assertThat(schema).doesNotContain("CREATE TABLE IF NOT EXISTS " + table);
-		}
+		assertThat(schema).doesNotContain("CREATE TABLE IF NOT EXISTS evaluation_runs");
+
+		assertThat(schema).contains("CREATE TABLE IF NOT EXISTS analytics_snapshots");
+		assertThat(schema).contains("idx_analytics_snapshots_session_id");
 
 		assertThat(schema).contains("current_question_version INT");
 		assertThat(schema).contains("question_version INT");

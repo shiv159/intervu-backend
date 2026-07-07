@@ -98,6 +98,14 @@ CREATE INDEX IF NOT EXISTS idx_interview_interactions_session_id ON interview_in
 CREATE INDEX IF NOT EXISTS idx_evaluations_session_id ON evaluations (session_id);
 CREATE INDEX IF NOT EXISTS idx_session_events_session_id_version ON session_events (session_id, event_version);
 
+CREATE TABLE IF NOT EXISTS analytics_snapshots (
+    id UUID PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES interview_sessions(id) ON DELETE CASCADE,
+    metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_session_id ON analytics_snapshots (session_id);
+
 -- ------------------------------------------------------------------
 -- Idempotent migrations for databases created before these columns existed
 -- ------------------------------------------------------------------
