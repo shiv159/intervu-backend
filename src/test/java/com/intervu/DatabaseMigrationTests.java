@@ -39,6 +39,9 @@ class DatabaseMigrationTests {
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_evaluations_session_id");
 		assertThat(schema).contains("CREATE INDEX IF NOT EXISTS idx_session_events_session_id_version");
 
+		assertThat(schema).contains("ALTER TABLE interview_sessions");
+		assertThat(schema).contains("ADD COLUMN IF NOT EXISTS current_question_version INT");
+
 		assertThat(data).contains("Two Sum in Java");
 		assertThat(data).contains("Design a URL Shortener");
 		assertThat(data).contains("Tell Me About a Production Incident");

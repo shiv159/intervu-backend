@@ -97,3 +97,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_interview_interactions_idempotency_key
 CREATE INDEX IF NOT EXISTS idx_interview_interactions_session_id ON interview_interactions (session_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_session_id ON evaluations (session_id);
 CREATE INDEX IF NOT EXISTS idx_session_events_session_id_version ON session_events (session_id, event_version);
+
+-- ------------------------------------------------------------------
+-- Idempotent migrations for databases created before these columns existed
+-- ------------------------------------------------------------------
+ALTER TABLE interview_sessions
+    ADD COLUMN IF NOT EXISTS current_question_version INT;
