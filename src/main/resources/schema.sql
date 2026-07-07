@@ -103,3 +103,6 @@ CREATE INDEX IF NOT EXISTS idx_session_events_session_id_version ON session_even
 -- ------------------------------------------------------------------
 ALTER TABLE interview_sessions
     ADD COLUMN IF NOT EXISTS current_question_version INT;
+
+ALTER TABLE interview_interactions
+    ADD COLUMN IF NOT EXISTS question_version INT;

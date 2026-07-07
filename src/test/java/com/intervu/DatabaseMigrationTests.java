@@ -41,6 +41,8 @@ class DatabaseMigrationTests {
 
 		assertThat(schema).contains("ALTER TABLE interview_sessions");
 		assertThat(schema).contains("ADD COLUMN IF NOT EXISTS current_question_version INT");
+		assertThat(schema).contains("ALTER TABLE interview_interactions");
+		assertThat(schema).contains("ADD COLUMN IF NOT EXISTS question_version INT");
 
 		assertThat(data).contains("Two Sum in Java");
 		assertThat(data).contains("Design a URL Shortener");
