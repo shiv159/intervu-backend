@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
         'IN_PROGRESS',
         'WAITING_EVALUATION',
         'EVALUATED',
+        'EVALUATION_FAILED',
         'COMPLETED',
         'EXPIRED',
         'ABANDONED'
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
     focus_areas JSONB NOT NULL DEFAULT '[]'::jsonb,
     current_question_id UUID REFERENCES questions(id),
     current_question_version INT,
+    adaptive_state JSONB NOT NULL DEFAULT '{}'::jsonb,
     state_version BIGINT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -73,6 +75,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     provider VARCHAR(255),
     latency_ms BIGINT,
     cost NUMERIC(12, 6),
+    evaluator_version VARCHAR(100),
+    prompt_version VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (interaction_id)
 );
@@ -106,6 +110,45 @@ CREATE TABLE IF NOT EXISTS analytics_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_session_id ON analytics_snapshots (session_id);
 
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+
+CREATE TABLE IF NOT EXISTS resume_extracts (
+    id UUID PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    source_filename TEXT,
+    extracted_text TEXT,
+    skills JSONB NOT NULL DEFAULT '[]'::jsonb,
+    focus_areas JSONB NOT NULL DEFAULT '[]'::jsonb,
+    claims JSONB NOT NULL DEFAULT '[]'::jsonb,
+    target_role TEXT,
+    seniority TEXT,
+    parser_version VARCHAR(100),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS jd_extracts (
+    id UUID PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    source_text TEXT,
+    requirements JSONB NOT NULL DEFAULT '[]'::jsonb,
+    technologies JSONB NOT NULL DEFAULT '[]'::jsonb,
+    responsibilities JSONB NOT NULL DEFAULT '[]'::jsonb,
+    seniority TEXT,
+    extractor_version VARCHAR(100),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_resume_extracts_owner_id ON resume_extracts (owner_id);
+CREATE INDEX IF NOT EXISTS idx_jd_extracts_owner_id ON jd_extracts (owner_id);
+
 -- ------------------------------------------------------------------
 -- Idempotent migrations for databases created before these columns existed
 -- ------------------------------------------------------------------
@@ -114,3 +157,16 @@ ALTER TABLE interview_sessions
 
 ALTER TABLE interview_interactions
     ADD COLUMN IF NOT EXISTS question_version INT;
+
+ALTER TABLE evaluations
+    ADD COLUMN IF NOT EXISTS evaluator_version VARCHAR(100);
+
+ALTER TABLE evaluations
+    ADD COLUMN IF NOT EXISTS prompt_version VARCHAR(100);
+
+ALTER TABLE interview_sessions
+    ADD COLUMN IF NOT EXISTS adaptive_state JSONB;
+
+UPDATE interview_sessions SET adaptive_state = '{}'::jsonb WHERE adaptive_state IS NULL;
+ALTER TABLE interview_sessions ALTER COLUMN adaptive_state SET DEFAULT '{}'::jsonb;
+ALTER TABLE interview_sessions ALTER COLUMN adaptive_state SET NOT NULL;

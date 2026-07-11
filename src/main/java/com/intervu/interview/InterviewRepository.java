@@ -87,6 +87,13 @@ public class InterviewRepository {
 		);
 	}
 
+	public void updateSessionAdaptiveState(UUID sessionId, String adaptiveStateJson) {
+		jdbcTemplate.update(
+			"UPDATE interview_sessions SET adaptive_state = ?::jsonb, updated_at = now() WHERE id = ?",
+			adaptiveStateJson, sessionId
+		);
+	}
+
 	public void updateSessionCurrentQuestion(UUID sessionId, UUID questionId, Integer questionVersion) {
 		jdbcTemplate.update(
 			"""
@@ -144,14 +151,14 @@ public class InterviewRepository {
 		);
 	}
 
-	public void insertEvaluation(UUID evaluationId, UUID sessionId, UUID interactionId, int score, Map<String, Integer> rubricScores, List<String> strengths, List<String> gaps, String followUpQuestion, String model, String provider, Long latencyMs, Double cost) {
+	public void insertEvaluation(UUID evaluationId, UUID sessionId, UUID interactionId, int score, Map<String, Integer> rubricScores, List<String> strengths, List<String> gaps, String followUpQuestion, String model, String provider, Long latencyMs, Double cost, String evaluatorVersion, String promptVersion) {
 		jdbcTemplate.update(
 			"""
 				INSERT INTO evaluations (
 					id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question,
-					model, provider, latency_ms, cost
+					model, provider, latency_ms, cost, evaluator_version, prompt_version
 				)
-				VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			evaluationId,
 			sessionId,
@@ -164,14 +171,16 @@ public class InterviewRepository {
 			model,
 			provider,
 			latencyMs,
-			cost
+			cost,
+			evaluatorVersion,
+			promptVersion
 		);
 	}
 
 	public Optional<EvaluationRow> findEvaluationByInteractionId(UUID interactionId) {
 		List<EvaluationRow> evaluations = jdbcTemplate.query(
 			"""
-				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question, model, provider, latency_ms, cost
+				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question, model, provider, latency_ms, cost, evaluator_version, prompt_version
 				FROM evaluations
 				WHERE interaction_id = ?
 				ORDER BY created_at DESC
@@ -186,7 +195,7 @@ public class InterviewRepository {
 	public Optional<EvaluationRow> findLatestEvaluationBySessionId(UUID sessionId) {
 		List<EvaluationRow> evaluations = jdbcTemplate.query(
 			"""
-				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question, model, provider, latency_ms, cost
+				SELECT id, session_id, interaction_id, score, rubric_scores, strengths, gaps, follow_up_question, model, provider, latency_ms, cost, evaluator_version, prompt_version
 				FROM evaluations
 				WHERE session_id = ?
 				ORDER BY created_at DESC
@@ -277,7 +286,9 @@ public class InterviewRepository {
 			rs.getString("model"),
 			rs.getString("provider"),
 			rs.getObject("latency_ms", Long.class),
-			cost
+			cost,
+			rs.getString("evaluator_version"),
+			rs.getString("prompt_version")
 		);
 	}
 

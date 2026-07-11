@@ -2,7 +2,6 @@ package com.intervu.questionbank.embedding;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -115,11 +114,9 @@ public class OpenRouterEmbeddingClient implements EmbeddingClient {
 		return "OpenRouter embeddings request failed with status " + statusCode + ": " + suffix;
 	}
 
-	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record OpenRouterEmbeddingsResponse(List<EmbeddingDatum> data, String model) {
 	}
 
-	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record EmbeddingDatum(List<Double> embedding, String object, int index) {
 	}
 

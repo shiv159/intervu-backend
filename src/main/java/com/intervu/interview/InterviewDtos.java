@@ -16,7 +16,9 @@ public final class InterviewDtos {
 		@NotBlank String seniority,
 		@NotBlank String mode,
 		List<String> skills,
-		List<String> focusAreas
+		List<String> focusAreas,
+		UUID resumeExtractId,
+		UUID jdExtractId
 	) {
 	}
 
@@ -43,7 +45,13 @@ public final class InterviewDtos {
 		Map<String, Integer> rubricScores,
 		List<String> strengths,
 		List<String> gaps,
-		String followUpQuestion
+		String followUpQuestion,
+		String provider,
+		String model,
+		Long latencyMs,
+		Double cost,
+		String evaluatorVersion,
+		String promptVersion
 	) {
 	}
 
@@ -60,14 +68,16 @@ public final class InterviewDtos {
 		List<String> focusAreas,
 		Integer currentQuestionVersion,
 		QuestionPayload currentQuestion,
-		EvaluationSummary lastEvaluation
+		EvaluationSummary lastEvaluation,
+		String aiMode
 	) {
 	}
 
 	public record AnswerSubmissionResponse(
 		UUID interactionId,
 		InterviewSessionResponse session,
-		EvaluationSummary evaluation
+		EvaluationSummary evaluation,
+		boolean evaluationPending
 	) {
 	}
 
@@ -97,7 +107,9 @@ public final class InterviewDtos {
 		String model,
 		String provider,
 		Long latencyMs,
-		Double cost
+		Double cost,
+		String evaluatorVersion,
+		String promptVersion
 	) {
 	}
 
@@ -139,7 +151,9 @@ public final class InterviewDtos {
 		String model,
 		String provider,
 		Long latencyMs,
-		Double cost
+		Double cost,
+		String evaluatorVersion,
+		String promptVersion
 	) {
 	}
 

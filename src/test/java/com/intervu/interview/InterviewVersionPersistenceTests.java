@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.intervu.interview.InterviewDtos.AnswerSubmissionRequest;
@@ -18,6 +19,7 @@ import static com.intervu.interview.InterviewDtos.EvaluationDraft;
 import static com.intervu.interview.InterviewDtos.EvaluationRow;
 import static com.intervu.interview.InterviewDtos.QuestionPayload;
 import static com.intervu.interview.InterviewDtos.SessionRow;
+import com.intervu.resumejd.ResumeJdRepository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -40,6 +42,9 @@ class InterviewVersionPersistenceTests {
 
 	@Mock
 	AnswerEvaluator answerEvaluator;
+
+	@Mock
+	ResumeJdRepository resumeJdRepository;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -71,7 +76,10 @@ class InterviewVersionPersistenceTests {
 			questionRetrievalService,
 			interviewRepository,
 			answerEvaluator,
-			objectMapper
+			objectMapper,
+			"MOCK",
+			Runnable::run,
+			resumeJdRepository
 		);
 
 		var response = service.getInterview(sessionId, "owner-1");
@@ -101,7 +109,10 @@ class InterviewVersionPersistenceTests {
 			questionRetrievalService,
 			interviewRepository,
 			answerEvaluator,
-			objectMapper
+			objectMapper,
+			"MOCK",
+			Runnable::run,
+			resumeJdRepository
 		);
 
 		var response = service.createInterview("owner-1", new InterviewDtos.CreateInterviewRequest(
@@ -109,7 +120,9 @@ class InterviewVersionPersistenceTests {
 			"SENIOR",
 			"SYSTEM_DESIGN",
 			List.of("java"),
-			List.of("caching")
+			List.of("caching"),
+			null,
+			null
 		));
 
 		assertThat(response.currentQuestionVersion()).isEqualTo(7);
@@ -143,7 +156,9 @@ class InterviewVersionPersistenceTests {
 			"mock-model",
 			"mock-provider",
 			12L,
-			0.01
+			0.01,
+			"eval-v1",
+			"prompt-v1"
 		);
 		EvaluationRow persistedEvaluation = new EvaluationRow(
 			UUID.randomUUID(),
@@ -157,7 +172,9 @@ class InterviewVersionPersistenceTests {
 			"mock-model",
 			"mock-provider",
 			12L,
-			0.01
+			0.01,
+			"eval-v1",
+			"prompt-v1"
 		);
 
 		when(interviewRepository.loadSession(sessionId)).thenReturn(session);
@@ -171,7 +188,10 @@ class InterviewVersionPersistenceTests {
 			questionRetrievalService,
 			interviewRepository,
 			answerEvaluator,
-			objectMapper
+			objectMapper,
+			"MOCK",
+			Runnable::run,
+			resumeJdRepository
 		);
 
 		service.submitAnswer(sessionId, "owner-1", "idem-1", new AnswerSubmissionRequest("answer"));
@@ -250,7 +270,10 @@ class InterviewVersionPersistenceTests {
 			questionRetrievalService,
 			interviewRepository,
 			answerEvaluator,
-			objectMapper
+			objectMapper,
+			"MOCK",
+			Runnable::run,
+			resumeJdRepository
 		);
 
 		service.nextQuestion(sessionId, "owner-1");

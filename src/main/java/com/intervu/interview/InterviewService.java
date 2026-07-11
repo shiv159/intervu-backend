@@ -1,14 +1,24 @@
 package com.intervu.interview;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+
+import com.intervu.resumejd.ResumeJdRepository;
+import com.intervu.resumejd.ResumeJdDtos;
 
 import static com.intervu.interview.InterviewDtos.AnswerSubmissionRequest;
 import static com.intervu.interview.InterviewDtos.AnswerSubmissionResponse;
@@ -27,49 +37,113 @@ import static com.intervu.interview.InterviewDtos.SessionRow;
 @Service
 public class InterviewService {
 
+	private static final Logger log = LoggerFactory.getLogger(InterviewService.class);
+
 	private static final String STATE_IN_PROGRESS = "IN_PROGRESS";
 	private static final String STATE_EVALUATED = "EVALUATED";
+	private static final String STATE_WAITING_EVALUATION = "WAITING_EVALUATION";
+	private static final String STATE_EVALUATION_FAILED = "EVALUATION_FAILED";
 
 	private final QuestionRepository questionRepository;
 	private final QuestionRetrievalService questionRetrievalService;
 	private final InterviewRepository interviewRepository;
 	private final AnswerEvaluator answerEvaluator;
 	private final ObjectMapper objectMapper;
+	private final String aiMode;
+	private final Executor evaluationExecutor;
+	private final ResumeJdRepository resumeJdRepository;
 
 	public InterviewService(
 		QuestionRepository questionRepository,
 		QuestionRetrievalService questionRetrievalService,
 		InterviewRepository interviewRepository,
 		AnswerEvaluator answerEvaluator,
-		ObjectMapper objectMapper
+		ObjectMapper objectMapper,
+		@Value("${intervu.ai.mode:MOCK}") String aiMode,
+		Executor evaluationExecutor,
+		ResumeJdRepository resumeJdRepository
 	) {
 		this.questionRepository = questionRepository;
 		this.questionRetrievalService = questionRetrievalService;
 		this.interviewRepository = interviewRepository;
 		this.answerEvaluator = answerEvaluator;
 		this.objectMapper = objectMapper;
+		this.aiMode = aiMode;
+		this.evaluationExecutor = evaluationExecutor;
+		this.resumeJdRepository = resumeJdRepository;
 	}
 
 	@Transactional
 	public InterviewSessionResponse createInterview(String ownerId, CreateInterviewRequest request) {
-		QuestionPayload question = questionRetrievalService.selectFirstQuestion(request.mode(), request.seniority(), request.skills(), request.focusAreas());
+		Map<String, String> adaptiveState = new LinkedHashMap<>();
+
+		Set<String> mergedSkills = new LinkedHashSet<>(safeList(request.skills()));
+		Set<String> mergedFocusAreas = new LinkedHashSet<>(safeList(request.focusAreas()));
+		String resumeTargetRole = null;
+		String resumeSeniority = null;
+		String jdSeniority = null;
+
+		if (request.resumeExtractId() != null) {
+			ResumeJdDtos.ResumeExtract resume = resumeJdRepository.findResumeById(request.resumeExtractId())
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Resume extract not found"));
+			if (resume.deleted() || !resume.ownerId().equals(ownerId)) {
+				throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Resume extract does not belong to the current user");
+			}
+			mergedSkills.addAll(safeList(resume.skills()));
+			mergedFocusAreas.addAll(safeList(resume.focusAreas()));
+			resumeTargetRole = resume.targetRole();
+			resumeSeniority = resume.seniority();
+			adaptiveState.put("resumeExtractId", request.resumeExtractId().toString());
+			adaptiveState.put("resumeTargetRole", resumeTargetRole);
+			adaptiveState.put("resumeSeniority", resumeSeniority);
+		}
+		if (request.jdExtractId() != null) {
+			ResumeJdDtos.JdExtract jd = resumeJdRepository.findJdById(request.jdExtractId())
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Job description extract not found"));
+			if (jd.deleted() || !jd.ownerId().equals(ownerId)) {
+				throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Job description extract does not belong to the current user");
+			}
+			mergedSkills.addAll(safeList(jd.technologies()));
+			jdSeniority = jd.seniority();
+			adaptiveState.put("jdExtractId", request.jdExtractId().toString());
+			adaptiveState.put("jdSeniority", jdSeniority);
+		}
+
+		adaptiveState.put("skills", String.join(",", mergedSkills));
+		adaptiveState.put("focusAreas", String.join(",", mergedFocusAreas));
+
+		String mode = normalizeMode(request.mode());
+		String targetRole = (request.targetRole() != null && !request.targetRole().trim().isEmpty())
+			? request.targetRole().trim()
+			: resumeTargetRole;
+		String seniority = pickSeniority(request.seniority(), resumeSeniority, jdSeniority);
+
+		QuestionPayload question = questionRetrievalService.selectFirstQuestion(
+			mode, seniority, List.copyOf(mergedSkills), List.copyOf(mergedFocusAreas));
 
 		UUID sessionId = UUID.randomUUID();
 		SessionRow session = new SessionRow(
 			sessionId,
 			ownerId,
-			request.targetRole().trim(),
+			targetRole == null ? "" : targetRole,
 			STATE_IN_PROGRESS,
-			normalizeMode(request.mode()),
-			normalizeSeniority(request.seniority()),
+			mode,
+			normalizeSeniority(seniority),
 			question.difficulty(),
-			safeList(request.skills()),
-			safeList(request.focusAreas()),
+			List.copyOf(mergedSkills),
+			List.copyOf(mergedFocusAreas),
 			question.id(),
 			question.version(),
 			1L
 		);
 		interviewRepository.insertSession(session);
+		if (!adaptiveState.isEmpty()) {
+			try {
+				interviewRepository.updateSessionAdaptiveState(sessionId, objectMapper.writeValueAsString(adaptiveState));
+			} catch (Exception ex) {
+				throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to persist adaptive state", ex);
+			}
+		}
 		interviewRepository.insertEvent(sessionId, "INTERVIEW_CREATED", payload(Map.of(
 			"sessionId", sessionId,
 			"ownerId", ownerId,
@@ -131,16 +205,17 @@ public class InterviewService {
 
 		if (existingInteraction != null) {
 			EvaluationRow existingEvaluation = interviewRepository.findEvaluationByInteractionId(existingInteraction.id()).orElse(null);
-			if (existingEvaluation == null) {
-				existingEvaluation = storeEvaluation(sessionId, existingInteraction.id(), question, request.answer());
-				interviewRepository.updateSessionState(sessionId, STATE_EVALUATED);
-				interviewRepository.insertEvent(sessionId, "EVALUATION_COMPLETED", payload(Map.of(
-					"interactionId", existingInteraction.id(),
-					"evaluationId", existingEvaluation.id(),
-					"score", existingEvaluation.score()
-				)));
+			if (existingEvaluation != null) {
+				return new AnswerSubmissionResponse(existingInteraction.id(), loadSessionView(sessionId, ownerId), toSummary(existingEvaluation), false);
 			}
-			return new AnswerSubmissionResponse(existingInteraction.id(), loadSessionView(sessionId, ownerId), toSummary(existingEvaluation));
+			if (STATE_WAITING_EVALUATION.equals(session.state())) {
+				return new AnswerSubmissionResponse(existingInteraction.id(), loadSessionView(sessionId, ownerId), null, true);
+			}
+			return new AnswerSubmissionResponse(existingInteraction.id(), loadSessionView(sessionId, ownerId), null, false);
+		}
+
+		if (!STATE_IN_PROGRESS.equals(session.state()) && !STATE_WAITING_EVALUATION.equals(session.state())) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot submit answer unless session is in progress or waiting for evaluation");
 		}
 
 		UUID interactionId = UUID.randomUUID();
@@ -164,15 +239,43 @@ public class InterviewService {
 			"questionVersion", question.version()
 		)));
 
-		EvaluationRow evaluation = storeEvaluation(sessionId, interactionId, question, request.answer());
-		interviewRepository.updateSessionState(sessionId, STATE_EVALUATED);
-		interviewRepository.insertEvent(sessionId, "EVALUATION_COMPLETED", payload(Map.of(
-			"interactionId", interactionId,
-			"evaluationId", evaluation.id(),
-			"score", evaluation.score()
-		)));
+		interviewRepository.updateSessionState(sessionId, STATE_WAITING_EVALUATION);
 
-		return new AnswerSubmissionResponse(interactionId, loadSessionView(sessionId, ownerId), toSummary(evaluation));
+		evaluationExecutor.execute(() -> asyncEvaluate(sessionId, interactionId, question, request.answer()));
+
+		return new AnswerSubmissionResponse(interactionId, loadSessionView(sessionId, ownerId), null, true);
+	}
+
+	private void asyncEvaluate(UUID sessionId, UUID interactionId, QuestionPayload question, String answer) {
+		EvaluationDraft draft;
+		try {
+			draft = answerEvaluator.evaluate(question, answer);
+		} catch (Exception ex) {
+			log.warn("Evaluator failed for interaction {}: {}", interactionId, ex.getMessage());
+			draft = answerEvaluator.evaluateFallback(question, answer);
+		}
+
+		try {
+			EvaluationRow evaluation = persistEvaluation(sessionId, interactionId, draft);
+			interviewRepository.updateSessionState(sessionId, STATE_EVALUATED);
+			interviewRepository.insertEvent(sessionId, "EVALUATION_COMPLETED", payload(Map.of(
+				"interactionId", interactionId,
+				"evaluationId", evaluation.id(),
+				"score", evaluation.score()
+			)));
+			interviewRepository.insertEvent(sessionId, "LIVE_SCORE_UPDATED", payload(Map.of(
+				"interactionId", interactionId,
+				"evaluationId", evaluation.id(),
+				"score", evaluation.score()
+			)));
+		} catch (Exception dbEx) {
+			log.error("Failed to persist evaluation for interaction {}: {}", interactionId, dbEx.getMessage());
+			interviewRepository.updateSessionState(sessionId, STATE_EVALUATION_FAILED);
+			interviewRepository.insertEvent(sessionId, "EVALUATION_FAILED", payload(Map.of(
+				"interactionId", interactionId,
+				"reason", "persistence-failure"
+			)));
+		}
 	}
 
 	public FeedbackResponse getFeedback(UUID sessionId, String ownerId) {
@@ -199,8 +302,7 @@ public class InterviewService {
 			.toList();
 	}
 
-	private EvaluationRow storeEvaluation(UUID sessionId, UUID interactionId, QuestionPayload question, String answer) {
-		EvaluationDraft eval = answerEvaluator.evaluate(question, answer);
+	private EvaluationRow persistEvaluation(UUID sessionId, UUID interactionId, EvaluationDraft eval) {
 		UUID evaluationId = UUID.randomUUID();
 		interviewRepository.insertEvaluation(
 			evaluationId,
@@ -214,13 +316,10 @@ public class InterviewService {
 			eval.model(),
 			eval.provider(),
 			eval.latencyMs(),
-			eval.cost()
+			eval.cost(),
+			eval.evaluatorVersion(),
+			eval.promptVersion()
 		);
-		interviewRepository.insertEvent(sessionId, "LIVE_SCORE_UPDATED", payload(Map.of(
-			"interactionId", interactionId,
-			"evaluationId", evaluationId,
-			"score", eval.score()
-		)));
 		return interviewRepository.findEvaluationByInteractionId(interactionId)
 			.orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Evaluation write did not persist"));
 	}
@@ -248,7 +347,8 @@ public class InterviewService {
 			session.focusAreas(),
 			session.currentQuestionVersion(),
 			question,
-			evaluation == null ? null : toSummary(evaluation)
+			evaluation == null ? null : toSummary(evaluation),
+			aiMode
 		);
 	}
 
@@ -275,7 +375,13 @@ public class InterviewService {
 			row.rubricScores(),
 			row.strengths(),
 			row.gaps(),
-			row.followUpQuestion()
+			row.followUpQuestion(),
+			row.provider(),
+			row.model(),
+			row.latencyMs(),
+			row.cost(),
+			row.evaluatorVersion(),
+			row.promptVersion()
 		);
 	}
 
@@ -289,11 +395,27 @@ public class InterviewService {
 	}
 
 	private String normalizeMode(String mode) {
-		return mode.trim().toUpperCase().replace(' ', '_');
+		return mode == null ? "" : mode.trim().toUpperCase().replace(' ', '_');
 	}
 
 	private String normalizeSeniority(String seniority) {
-		return seniority.trim().toUpperCase().replace(' ', '_');
+		return seniority == null ? "" : seniority.trim().toUpperCase().replace(' ', '_');
+	}
+
+	private String pickSeniority(String primary, String... fallbacks) {
+		if (primary != null && !primary.isBlank() && isValidSeniority(primary)) {
+			return primary;
+		}
+		for (String fallback : fallbacks) {
+			if (fallback != null && !fallback.isBlank() && isValidSeniority(fallback)) {
+				return fallback;
+			}
+		}
+		return primary;
+	}
+
+	private boolean isValidSeniority(String seniority) {
+		return Set.of("JUNIOR", "MID", "SENIOR", "STAFF").contains(normalizeSeniority(seniority));
 	}
 
 	private List<String> safeList(List<String> input) {

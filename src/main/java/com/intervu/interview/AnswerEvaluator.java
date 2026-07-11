@@ -1,8 +1,9 @@
 package com.intervu.interview;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.intervu.ai.LlmAnswerEvaluator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -19,23 +20,32 @@ public class AnswerEvaluator {
 
 	private static final Logger log = LoggerFactory.getLogger(AnswerEvaluator.class);
 
-	private final ObjectMapper objectMapper;
+	private final String aiMode;
+	private final LlmAnswerEvaluator llmEvaluator;
 
-	public AnswerEvaluator() {
-		this.objectMapper = new ObjectMapper();
+	public AnswerEvaluator(
+		@Value("${intervu.ai.mode:MOCK}") String aiMode,
+		LlmAnswerEvaluator llmEvaluator
+	) {
+		this.aiMode = aiMode;
+		this.llmEvaluator = llmEvaluator;
 	}
 
 	public EvaluationDraft evaluate(QuestionPayload question, String answer) {
 		String normalizedAnswer = answer == null ? "" : answer.trim();
-		log.debug("Using deterministic fallback evaluator for question {} in mode {}", question.id(), question.mode());
+		if ("LIVE".equalsIgnoreCase(aiMode) && llmEvaluator != null) {
+			try {
+				return llmEvaluator.evaluate(question, normalizedAnswer);
+			} catch (Exception ex) {
+				log.warn("LLM evaluation failed for question {}: {}", question.id(), ex.getMessage());
+				return evaluateFallback(question, normalizedAnswer);
+			}
+		}
+		log.warn("Deterministic mock evaluator in use for question {} in MOCK mode", question.id());
 		return evaluateFallback(question, normalizedAnswer);
 	}
 
-	// -------------------------------------------------------------------------
-	// FALLBACK DETERMINISTIC EVALUATOR (Original Code)
-	// -------------------------------------------------------------------------
-
-	private EvaluationDraft evaluateFallback(QuestionPayload question, String normalizedAnswer) {
+	public EvaluationDraft evaluateFallback(QuestionPayload question, String normalizedAnswer) {
 		List<String> strengths = new ArrayList<>();
 		List<String> gaps = new ArrayList<>();
 		Map<String, Integer> rubricScores = new LinkedHashMap<>();
@@ -124,7 +134,7 @@ public class AnswerEvaluator {
 				default -> "Can you make the example more specific and measurable?";
 			};
 
-		return new EvaluationDraft(score, rubricScores, List.copyOf(strengths), List.copyOf(gaps), followUpQuestion, "deterministic-fallback", "local", 0L, 0.0);
+		return new EvaluationDraft(score, rubricScores, List.copyOf(strengths), List.copyOf(gaps), followUpQuestion, "local", "deterministic-fallback", 0L, 0.0, "deterministic-v1", "prompt-v1");
 	}
 
 	private boolean containsAny(String text, String... needles) {
