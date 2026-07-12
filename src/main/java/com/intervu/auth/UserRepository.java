@@ -68,7 +68,7 @@ public class UserRepository {
 			rs.getString("id"),
 			rs.getString("email"),
 			rs.getString("password_hash"),
-			rs.getObject("created_at", Instant.class)
+			rs.getTimestamp("created_at").toInstant()
 		);
 	}
 
