@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +49,7 @@ public class UserRepository {
 	public UserRecord insert(String email, String passwordHash) {
 		String id = UUID.randomUUID().toString();
 		Instant createdAt = Instant.now();
+		Timestamp createdAtTs = Timestamp.from(createdAt);
 		jdbcTemplate.update(
 			"""
 				INSERT INTO users (id, email, password_hash, created_at)
@@ -56,7 +58,7 @@ public class UserRepository {
 			id,
 			email,
 			passwordHash,
-			createdAt
+			createdAtTs
 		);
 		return new UserRecord(id, email, passwordHash, createdAt);
 	}
