@@ -170,3 +170,10 @@ ALTER TABLE interview_sessions
 UPDATE interview_sessions SET adaptive_state = '{}'::jsonb WHERE adaptive_state IS NULL;
 ALTER TABLE interview_sessions ALTER COLUMN adaptive_state SET DEFAULT '{}'::jsonb;
 ALTER TABLE interview_sessions ALTER COLUMN adaptive_state SET NOT NULL;
+
+-- Migrate check constraints for databases created before newer states were added
+ALTER TABLE interview_sessions DROP CONSTRAINT IF EXISTS interview_sessions_state_check;
+ALTER TABLE interview_sessions ADD CONSTRAINT interview_sessions_state_check CHECK (state IN (
+    'CREATED', 'IN_PROGRESS', 'WAITING_EVALUATION', 'EVALUATED',
+    'EVALUATION_FAILED', 'COMPLETED', 'EXPIRED', 'ABANDONED'
+));

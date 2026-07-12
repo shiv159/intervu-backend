@@ -105,6 +105,7 @@ jobs:
           OPENROUTER_MODEL="${{ secrets.OPENROUTER_MODEL || 'google/gemini-2.5-flash' }}"
           INTERVU_JWT_SECRET="${{ secrets.JWT_SECRET }}"
           INTERVU_CORS_ALLOWED_ORIGINS="${CORS_ORIGINS}"
+          SPRING_PROFILES_ACTIVE=prod
           EOF
 
           gcloud run deploy ${{ env.SERVICE_NAME }} \

@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -241,7 +243,17 @@ public class InterviewService {
 
 		interviewRepository.updateSessionState(sessionId, STATE_WAITING_EVALUATION);
 
-		evaluationExecutor.execute(() -> asyncEvaluate(sessionId, interactionId, question, request.answer()));
+		Runnable evaluationTask = () -> asyncEvaluate(sessionId, interactionId, question, request.answer());
+		if (TransactionSynchronizationManager.isActualTransactionActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					evaluationExecutor.execute(evaluationTask);
+				}
+			});
+		} else {
+			evaluationExecutor.execute(evaluationTask);
+		}
 
 		return new AnswerSubmissionResponse(interactionId, loadSessionView(sessionId, ownerId), null, true);
 	}
